@@ -9,6 +9,9 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <!-- New Libraries for Spreadsheet Parsing -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
         :root {
@@ -81,6 +84,28 @@
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
+
+        /* Styles for the new filter popover */
+        .filter-popover {
+            position: absolute;
+            z-index: 50;
+            top: 100%;
+            left: 0;
+            width: 300px;
+            max-height: 400px;
+            overflow-y: auto;
+            transform-origin: top;
+            animation: fade-in 0.2s ease-out;
+            display: none;
+        }
+        @keyframes fade-in {
+            from { opacity: 0; transform: scale(0.95) translateY(-10px); }
+            to { opacity: 1; transform: scale(1) translateY(0); }
+        }
+        .filter-popover.active {
+            display: block;
+        }
+
     </style>
 </head>
 <body class="min-h-screen">
@@ -90,16 +115,17 @@
         <div class="w-full max-w-md text-center">
             <div class="glass-card p-8 rounded-2xl shadow-2xl">
                 <h1 class="text-3xl font-bold mb-2">BentoDB</h1>
-                <p class="text-md text-gray-400 mb-6">Create beautiful, interactive dashboards from your SQLite databases.</p>
+                <p class="text-md text-gray-400 mb-6">Create beautiful, interactive dashboards from your data files.</p>
                 <div id="dropZone" class="border-2 border-dashed border-gray-600 rounded-xl p-8 cursor-pointer hover:border-blue-500 hover:bg-gray-800/20 transition-all">
-                    <input type="file" id="dbFile" accept=".sqlite, .db, .sqlite3" class="hidden">
-                    <p class="text-gray-400">Drag & Drop your database file here</p>
+                    <!-- Updated accept attribute to include spreadsheet files -->
+                    <input type="file" id="dbFile" accept=".sqlite,.db,.sqlite3,.csv,.xls,.xlsx" class="hidden">
+                    <p class="text-gray-400">Drag & Drop your database or spreadsheet file here</p>
                     <p class="text-gray-500 text-sm my-2">or</p>
                     <button id="browseButton" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-5 rounded-lg transition-colors">Browse Files</button>
                 </div>
-                 <div id="loadingIndicator" class="hidden mt-6 flex flex-col items-center">
+                <div id="loadingIndicator" class="hidden mt-6 flex flex-col items-center">
                     <div class="loading-spinner"></div>
-                    <p class="mt-3 text-gray-400">Loading database...</p>
+                    <p id="loadingText" class="mt-3 text-gray-400">Loading database...</p>
                 </div>
                 <p id="error-message" class="text-red-500 mt-4 text-sm hidden"></p>
             </div>
@@ -115,13 +141,19 @@
                     <h1 class="text-xl font-bold">Dashboard</h1>
                 </div>
                 <div id="globalFilters" class="flex flex-wrap gap-2 items-center">
-                    <!-- Global filters will be injected here -->
-                    <span class="text-sm text-gray-500">Global filters will appear here once you add cards.</span>
+                    <!-- Global filter buttons will be dynamically injected here -->
+                    <span id="initialFilterMsg" class="text-sm text-gray-500">Global filters will appear here once you add cards.</span>
                 </div>
-                <button id="exportPdf" class="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2 px-4 rounded-lg transition-colors flex items-center gap-2">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                    Export PDF
-                </button>
+                <div class="flex items-center gap-2">
+                    <button id="updateDashboardButton" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-lg transition-colors flex items-center gap-2">
+                         <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 1-9 9 9 9 0 0 1-9-9c0-1.03.17-2.02.48-2.93"/><path d="M12 21V12h9"/><path d="M18.8 8.8c.47-.84.7-1.78.7-2.82A9 9 0 0 0 12 3"/></svg>
+                         Update Dashboard
+                    </button>
+                    <button id="exportPdf" class="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2 px-4 rounded-lg transition-colors flex items-center gap-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                        Export PDF
+                    </button>
+                </div>
             </div>
         </header>
 
@@ -187,6 +219,20 @@
             </div>
         </div>
     </div>
+    
+    <!-- Global Filter Popover -->
+    <div id="filterPopover" class="glass-card filter-popover p-4 rounded-xl shadow-lg" tabindex="-1">
+      <div class="flex items-center justify-between border-b border-gray-600 pb-2 mb-2">
+        <h3 id="popoverTitle" class="font-semibold">Filter Options</h3>
+        <button id="closeFilterPopover" class="text-gray-400 hover:text-white">&times;</button>
+      </div>
+      <div class="flex flex-col gap-2">
+        <input id="filterSearch" type="text" placeholder="Search..." class="w-full bg-gray-900/50 border border-gray-600 rounded-lg p-2 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none">
+        <div id="filterOptionsContainer" class="max-h-64 overflow-y-auto space-y-1 pr-2">
+          <!-- Checkbox options will be injected here -->
+        </div>
+      </div>
+    </div>
 
 
 <script>
@@ -206,6 +252,7 @@
     const dropZone = document.getElementById('dropZone');
     const browseButton = document.getElementById('browseButton');
     const loadingIndicator = document.getElementById('loadingIndicator');
+    const loadingText = document.getElementById('loadingText');
     const errorMessage = document.getElementById('error-message');
     const addQueryCard = document.getElementById('addQueryCard');
     const queryModal = document.getElementById('queryModal');
@@ -219,7 +266,13 @@
     const dashboardGrid = document.getElementById('dashboardGrid');
     const globalFiltersContainer = document.getElementById('globalFilters');
     const exportPdfButton = document.getElementById('exportPdf');
+    const updateDashboardButton = document.getElementById('updateDashboardButton');
     const modalError = document.getElementById('modal-error');
+    const filterPopover = document.getElementById('filterPopover');
+    const popoverTitle = document.getElementById('popoverTitle');
+    const closeFilterPopover = document.getElementById('closeFilterPopover');
+    const filterSearch = document.getElementById('filterSearch');
+    const filterOptionsContainer = document.getElementById('filterOptionsContainer');
 
 
     // --- App State ---
@@ -227,6 +280,7 @@
     let dbSchema = {};
     let dashboardCards = [];
     let charts = {}; // To store chart instances
+    let globalFilters = {}; // Key: columnName, Value: Array of selected values
 
     // --- SQL.js Initialization ---
     async function initializeSqlJs() {
@@ -265,6 +319,18 @@
     groupByColumn.addEventListener('change', onGroupByColumnChange);
     submitQuery.addEventListener('click', handleQuerySubmit);
     exportPdfButton.addEventListener('click', handleExport);
+    updateDashboardButton.addEventListener('click', renderDashboard);
+
+    // Filter popover listeners
+    closeFilterPopover.addEventListener('click', closeFilterPopoverFunc);
+    filterSearch.addEventListener('input', (e) => updateFilterOptions(e.target.dataset.column, e.target.value));
+
+    // Close popover when clicking outside
+    document.addEventListener('click', (e) => {
+        if (filterPopover.classList.contains('active') && !filterPopover.contains(e.target) && !e.target.closest('.filter-button')) {
+            closeFilterPopoverFunc();
+        }
+    });
 
 
     // --- File Handling ---
@@ -285,14 +351,27 @@
         loadingIndicator.classList.remove('hidden');
         dropZone.classList.add('hidden');
         errorMessage.classList.add('hidden');
-
+        
+        const fileExtension = file.name.split('.').pop().toLowerCase();
+        let fileBuffer;
+        
         try {
-            // Await for the sql.js library to be ready first.
+            loadingText.textContent = "Reading file...";
+            fileBuffer = await file.arrayBuffer();
+
             const SQL = await sqlJsPromise;
-            // Then, read the file into a buffer. This can prevent permission issues
-            // in some environments where file access permission expires quickly.
-            const fileBuffer = await file.arrayBuffer();
-            db = new SQL.Database(new Uint8Array(fileBuffer));
+            db = new SQL.Database(); // Create a new in-memory DB
+            
+            if (['sqlite', 'db', 'sqlite3'].includes(fileExtension)) {
+                loadingText.textContent = "Loading database...";
+                db = new SQL.Database(new Uint8Array(fileBuffer));
+            } else if (['csv', 'xls', 'xlsx'].includes(fileExtension)) {
+                loadingText.textContent = "Parsing spreadsheet...";
+                await loadSpreadsheet(file, fileBuffer);
+            } else {
+                throw new Error("Unsupported file type.");
+            }
+            
             await inspectDatabase();
             
             // Transition to dashboard
@@ -304,13 +383,100 @@
             }, 300);
 
         } catch (err) {
-            console.error("Database Error:", err);
-            showError("Could not read the database file. Please ensure it's a valid SQLite file.");
+            console.error("File loading error:", err);
+            showError(`Could not read the file: ${err.message}.`);
             loadingIndicator.classList.add('hidden');
             dropZone.classList.remove('hidden');
         }
     }
+    
+    // Function to parse spreadsheet data and load it into SQLite
+    async function loadSpreadsheet(file, buffer) {
+        const fileExtension = file.name.split('.').pop().toLowerCase();
+        let data = [];
+        let tableHeader = [];
+        
+        if (fileExtension === 'csv') {
+            await new Promise((resolve, reject) => {
+                Papa.parse(file, {
+                    header: true,
+                    skipEmptyLines: true,
+                    complete: (results) => {
+                        data = results.data;
+                        if (data.length > 0) {
+                            tableHeader = Object.keys(data[0]);
+                        }
+                        resolve();
+                    },
+                    error: (error) => reject(error)
+                });
+            });
+        } else if (['xls', 'xlsx'].includes(fileExtension)) {
+            const workbook = XLSX.read(buffer, { type: 'array' });
+            const sheetName = workbook.SheetNames[0];
+            const sheet = workbook.Sheets[sheetName];
+            data = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+            if (data.length > 0) {
+                tableHeader = data[0];
+                data = data.slice(1);
+            }
+        } else {
+            throw new Error("Unsupported file type.");
+        }
 
+        if (data.length === 0) {
+            throw new Error("The file is empty or could not be parsed.");
+        }
+
+        const tableName = sanitizeTableName(file.name);
+        // Create table with TEXT columns by default
+        const columns = tableHeader.map(c => `"${sanitizeColumnName(c)}" TEXT`);
+        const placeholders = tableHeader.map(() => '?').join(', ');
+        
+        db.exec(`CREATE TABLE IF NOT EXISTS "${tableName}" (${columns.join(', ')});`);
+
+        const insertStmt = db.prepare(`INSERT INTO "${tableName}" VALUES (${placeholders});`);
+        db.run('BEGIN TRANSACTION;');
+        try {
+            data.forEach(row => {
+                const values = Array.isArray(row) ? row : tableHeader.map(h => row[h]);
+                insertStmt.run(values);
+            });
+            db.run('COMMIT;');
+        } catch (e) {
+            db.run('ROLLBACK;');
+            throw new Error(`Failed to insert data: ${e.message}`);
+        } finally {
+            insertStmt.free();
+        }
+    }
+    
+    // Updated sanitization logic for file names
+    function sanitizeTableName(name) {
+        // Remove file extension
+        const baseName = name.split('.').slice(0, -1).join('.');
+        // Replace invalid characters with underscore
+        let sanitized = baseName.replace(/[^a-zA-Z0-9_]/g, '_');
+        // Ensure it doesn't start with a number, which can cause SQL errors
+        if (sanitized.match(/^\d/)) {
+            sanitized = 't_' + sanitized;
+        }
+        return sanitized;
+    }
+
+    // Updated sanitization logic for column names
+    function sanitizeColumnName(name) {
+        // Replace invalid characters with underscore
+        let sanitized = name.replace(/[^a-zA-Z0-9_]/g, '_');
+        // Replace multiple underscores with a single one
+        sanitized = sanitized.replace(/_+/g, '_');
+        // Ensure it doesn't start with a number
+        if (sanitized.match(/^\d/)) {
+            sanitized = 'col_' + sanitized;
+        }
+        return sanitized.toLowerCase();
+    }
+    
     function showError(message) {
         errorMessage.textContent = message;
         errorMessage.classList.remove('hidden');
@@ -325,11 +491,27 @@
         dbSchema.tables = tableNames;
 
         for (const tableName of tableNames) {
-            const columnsResult = db.exec(`PRAGMA table_info(${tableName});`);
+            // Re-inspect the schema, but this time, infer column types from the data
+            const columnsResult = db.exec(`PRAGMA table_info("${tableName}");`);
             const columns = columnsResult[0].values.map(col => ({
                 name: col[1],
                 type: col[2].toUpperCase(),
+                inferredType: 'TEXT' // Default to TEXT
             }));
+            
+            // Now, run a query to infer numeric types
+            for (const col of columns) {
+                const sampleQuery = `SELECT "${col.name}" FROM "${tableName}" WHERE "${col.name}" IS NOT NULL LIMIT 10;`;
+                const sampleResult = runQuery(sampleQuery);
+                const allNumeric = sampleResult.values.every(row => {
+                    const value = row[0];
+                    return !isNaN(parseFloat(value)) && isFinite(value);
+                });
+                if (allNumeric) {
+                    col.inferredType = 'NUMERIC';
+                }
+            }
+
             dbSchema[tableName] = { columns };
         }
         populateTableSelect();
@@ -348,7 +530,8 @@
     
     function populateSummarizeColumn(tableName) {
         const { columns } = dbSchema[tableName];
-        const numericColumns = columns.filter(c => ['INTEGER', 'REAL', 'FLOAT', 'DOUBLE', 'NUMERIC'].includes(c.type));
+        // Now use the inferredType to filter for numeric columns
+        const numericColumns = columns.filter(c => c.inferredType === 'NUMERIC');
 
         summarizeColumn.innerHTML = '<option disabled selected>Select Column</option>';
         if (summarizeFunc.value !== 'COUNT') {
@@ -373,7 +556,8 @@
         columns.forEach(col => {
             const option = document.createElement('option');
             option.value = col.name;
-            option.dataset.type = col.type;
+            // Use the original type from pragma for date checks
+            option.dataset.type = col.type; 
             option.textContent = col.name;
             groupByColumn.appendChild(option);
         });
@@ -385,6 +569,16 @@
     function onSummarizeFuncChange() {
         const isCount = summarizeFunc.value === 'COUNT';
         summarizeColumn.disabled = isCount;
+        
+        const tableName = tableSelect.value;
+        // Added a check to alert the user to select a table first
+        if (!isCount && (!tableName || tableName.includes('Select'))) {
+            modalError.textContent = 'Please select a table first to see numeric columns.';
+            modalError.classList.remove('hidden');
+            setTimeout(() => modalError.classList.add('hidden'), 3000);
+            return;
+        }
+
         if (isCount) {
             summarizeColumn.innerHTML = '<option>Not Applicable</option>';
         } else {
@@ -461,6 +655,9 @@
         let groupByClause = `GROUP BY T1."${config.groupBy}"`;
         let whereClauses = [];
 
+        // Correctly handle COUNT(*) and other aggregates
+        const aggColumnSelect = config.aggColumn === '*' ? '*' : `T1."${config.aggColumn}"`;
+
         const tableSchema = dbSchema[config.table];
         if (!tableSchema) return ''; // Should not happen
         const groupByColumnSchema = tableSchema.columns.find(c => c.name === config.groupBy);
@@ -476,22 +673,22 @@
                  case 'day': format = '%Y-%m-%d'; break;
              }
              if (format) {
-                 selectClause = `strftime('${format}', T1."${config.groupBy}") as "${config.groupBy}", ${config.aggFunc}(T1."${config.aggColumn}") as value`;
+                 selectClause = `strftime('${format}', T1."${config.groupBy}") as "${config.groupBy}", ${config.aggFunc}(${aggColumnSelect}) as value`;
                  groupByClause = `GROUP BY 1`; // Group by the first column
              }
         }
         
         if (!selectClause) {
-            selectClause = `T1."${config.groupBy}", ${config.aggFunc}(T1."${config.aggColumn}") as value`;
+            selectClause = `T1."${config.groupBy}", ${config.aggFunc}(${aggColumnSelect}) as value`;
         }
 
         // Apply global filters
-        for(const [key, value] of Object.entries(filters)) {
-            if(value && value !== 'all') {
-                whereClauses.push(`T1."${key}" = '${value.replace(/'/g, "''")}'`);
+        for(const [key, values] of Object.entries(filters)) {
+            if(values && values.length > 0) {
+                const quotedValues = values.map(v => `'${v.replace(/'/g, "''")}'`).join(',');
+                whereClauses.push(`T1."${key}" IN (${quotedValues})`);
             }
         }
-
         let whereClause = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
         const orderByClause = `ORDER BY 2 DESC LIMIT 50`; // Order by the second column (value), limit for performance
 
@@ -533,7 +730,7 @@
         }
 
 
-        const sql = buildQuery(config, getActiveGlobalFilters());
+        const sql = buildQuery(config, globalFilters);
         const result = runQuery(sql);
 
         // Header
@@ -643,61 +840,113 @@
         dashboardCards.forEach(card => {
             dbSchema[card.table].columns.forEach(col => {
                 if(!activeColumns.has(col.name)) {
-                     activeColumns.set(col.name, card.table);
+                     activeColumns.set(col.name, col.type);
                 }
             });
         });
 
-        if (activeColumns.size === 0) {
-            globalFiltersContainer.innerHTML = `<span class="text-sm text-gray-500">Global filters will appear here once you add cards.</span>`;
-            return;
+        const initialFilterMsg = document.getElementById('initialFilterMsg');
+        if (initialFilterMsg) {
+            initialFilterMsg.classList.toggle('hidden', activeColumns.size > 0);
         }
-
         globalFiltersContainer.innerHTML = '';
-        activeColumns.forEach((tableName, colName) => {
-            const filterId = `global-filter-${colName.replace(/\s/g, '_')}`;
-            if (document.getElementById(filterId)) return;
+        activeColumns.forEach((colType, colName) => {
+            const filterId = `global-filter-${colName.replace(/[^a-zA-Z0-9_]/g, '_')}`;
             
-            const wrapper = document.createElement('div');
-            wrapper.className = 'flex items-center gap-2';
-
-            const label = document.createElement('label');
-            label.textContent = colName;
-            label.className = 'text-sm';
+            const btn = document.createElement('button');
+            btn.className = `filter-button relative bg-gray-900/50 hover:bg-gray-800/50 text-white font-semibold py-2 px-4 rounded-lg transition-colors text-sm`;
+            btn.textContent = colName;
+            btn.dataset.column = colName;
             
-            const select = document.createElement('select');
-            select.id = filterId;
-            select.dataset.column = colName;
-            select.className = 'bg-gray-900/50 border border-gray-600 rounded-md p-1 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none';
-            select.onchange = () => renderDashboard();
-
-            // Populate options
-            const distinctValuesQuery = `SELECT DISTINCT "${colName}" FROM "${tableName}" WHERE "${colName}" IS NOT NULL ORDER BY "${colName}" ASC LIMIT 100;`;
-            const results = runQuery(distinctValuesQuery);
-            select.innerHTML = '<option value="all">All</option>';
-            if (results && Array.isArray(results.values)) {
-                results.values.forEach(row => {
-                    const option = document.createElement('option');
-                    option.value = row[0];
-                    option.textContent = row[0];
-                    select.appendChild(option);
-                });
+            // Add a counter to the button if filters are active
+            if (globalFilters[colName] && globalFilters[colName].length > 0) {
+                const countSpan = document.createElement('span');
+                countSpan.className = 'ml-2 text-xs font-bold text-white bg-blue-600 rounded-full px-2 py-1';
+                countSpan.textContent = globalFilters[colName].length;
+                btn.appendChild(countSpan);
             }
 
-            wrapper.append(label, select);
-            globalFiltersContainer.appendChild(wrapper);
+            btn.addEventListener('click', (e) => openFilterPopover(e, colName));
+            globalFiltersContainer.appendChild(btn);
         });
     }
 
+    function openFilterPopover(e, columnName) {
+        const rect = e.target.getBoundingClientRect();
+        filterPopover.style.top = `${rect.bottom + window.scrollY + 8}px`;
+        filterPopover.style.left = `${rect.left + window.scrollX}px`;
+        popoverTitle.textContent = `Filter by ${columnName}`;
+        filterSearch.dataset.column = columnName;
+        filterSearch.value = '';
+        filterPopover.classList.add('active');
+        populateFilterOptions(columnName);
+    }
+    
+    function closeFilterPopoverFunc() {
+        filterPopover.classList.remove('active');
+    }
+
+    function populateFilterOptions(columnName, searchText = '') {
+        filterOptionsContainer.innerHTML = '<p class="text-center text-gray-500">Loading...</p>';
+        const tableNameForFilter = dbSchema.tables.find(t => dbSchema[t].columns.some(c => c.name === columnName));
+        if (!tableNameForFilter) {
+            filterOptionsContainer.innerHTML = '<p class="text-center text-gray-500">No data found.</p>';
+            return;
+        }
+
+        const distinctValuesQuery = `SELECT DISTINCT "${columnName}" FROM "${tableNameForFilter}" WHERE "${columnName}" IS NOT NULL ORDER BY "${columnName}" ASC LIMIT 1000;`;
+        const results = runQuery(distinctValuesQuery);
+        
+        filterOptionsContainer.innerHTML = '';
+        const selectedValues = globalFilters[columnName] || [];
+        
+        if (results && Array.isArray(results.values)) {
+            const filteredValues = results.values.filter(row => 
+                String(row[0]).toLowerCase().includes(searchText.toLowerCase())
+            );
+
+            filteredValues.forEach(row => {
+                const value = row[0];
+                const checkboxId = `${columnName}-${value.replace(/[^a-zA-Z0-9_]/g, '_')}`;
+                
+                const div = document.createElement('div');
+                div.className = 'flex items-center space-x-2';
+                const input = document.createElement('input');
+                input.type = 'checkbox';
+                input.id = checkboxId;
+                input.value = value;
+                input.checked = selectedValues.includes(value);
+                input.className = 'w-4 h-4 text-blue-600 bg-gray-700 border-gray-600 rounded focus:ring-blue-500';
+                input.addEventListener('change', (e) => {
+                    if (!globalFilters[columnName]) {
+                        globalFilters[columnName] = [];
+                    }
+                    if (e.target.checked) {
+                        globalFilters[columnName].push(e.target.value);
+                    } else {
+                        globalFilters[columnName] = globalFilters[columnName].filter(v => v !== e.target.value);
+                    }
+                    updateGlobalFilters();
+                });
+
+                const label = document.createElement('label');
+                label.htmlFor = checkboxId;
+                label.textContent = value;
+                label.className = 'text-gray-300 hover:text-white cursor-pointer';
+
+                div.appendChild(input);
+                div.appendChild(label);
+                filterOptionsContainer.appendChild(div);
+            });
+        }
+    }
+
+    function updateFilterOptions(columnName, searchText) {
+        populateFilterOptions(columnName, searchText);
+    }
+
     function getActiveGlobalFilters() {
-        const filters = {};
-        const selects = globalFiltersContainer.querySelectorAll('select');
-        selects.forEach(select => {
-            if(select.value !== 'all') {
-                filters[select.dataset.column] = select.value;
-            }
-        });
-        return filters;
+        return globalFilters;
     }
 
 
@@ -768,7 +1017,6 @@
             pdf.save('dashboard.pdf');
         } catch(e) {
             console.error('Export failed', e);
-            // Removed alert per instructions
             showError("Could not export to PDF. Check console for details.");
         }
     }
@@ -797,4 +1045,3 @@
 </script>
 </body>
 </html>
-

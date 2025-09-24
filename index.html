@@ -1249,7 +1249,7 @@
     }
 
     function getDisplayValue(value, type) {
-        if (!value) return "NULL";
+        if (value === null) return "NULL";
         if (['DATE', 'DATETIME'].includes(type) && typeof value === 'string') {
             try {
                 const date = new Date(value);
@@ -1284,15 +1284,15 @@
             filteredValues.forEach(row => {
                 const value = row[0];
                 const displayValue = getDisplayValue(value, columnType);
-                const checkboxId = `${columnName}-${value.replace(/[^a-zA-Z0-9_]/g, '_')}`;
+                const checkboxId = `${columnName}-${String(value).replace(/[^a-zA-Z0-9_]/g, '_')}`;
                 
                 const div = document.createElement('div');
                 div.className = 'flex items-center space-x-2';
                 const input = document.createElement('input');
                 input.type = 'checkbox';
                 input.id = checkboxId;
-                input.value = value;
-                input.checked = selectedValues.includes(value);
+                input.value = String(value);
+                input.checked = selectedValues.includes(String(value));
                 input.className = 'w-4 h-4 text-blue-600 bg-gray-700 border-gray-600 rounded focus:ring-blue-500';
                 input.addEventListener('change', (e) => {
                     if (!globalFilters[columnName]) {

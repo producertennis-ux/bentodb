@@ -7,6 +7,8 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- New Chart.js plugin for data labels -->
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.0.0"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <!-- New Libraries for Spreadsheet Parsing -->
@@ -106,6 +108,33 @@
             display: block;
         }
 
+        /* Modal backdrop styles */
+        .modal-backdrop {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.7);
+            backdrop-filter: blur(5px);
+            z-index: 40;
+            display: none;
+            justify-content: center;
+            align-items: center;
+        }
+        .modal-content {
+            background-color: var(--bg-color);
+            border-radius: 0.75rem;
+            padding: 1.5rem;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+            width: 100%;
+            max-width: 500px;
+        }
+        /* Style for the selected chart type button */
+        .chart-type-btn[data-selected="true"] {
+            background-color: rgba(59, 130, 246, 0.5);
+            border-color: var(--accent-color);
+        }
     </style>
 </head>
 <body class="min-h-screen">
@@ -131,6 +160,35 @@
             </div>
         </div>
     </div>
+
+    <!-- Mapping View (New Step) -->
+    <div id="mappingView" class="fixed inset-0 flex items-center justify-center p-4 z-50 transition-opacity duration-300 hidden opacity-0">
+        <div class="w-full max-w-4xl max-h-[90vh] flex flex-col glass-card rounded-2xl">
+            <div class="p-6 border-b border-[var(--border-color)]">
+                <h2 class="text-xl font-bold">Map Your Data</h2>
+                <p class="text-gray-400 text-sm mt-1">Review and define column names and data types before creating your dashboard.</p>
+            </div>
+            <div class="p-6 flex-grow overflow-y-auto space-y-4">
+                <!-- New input for table name -->
+                <div>
+                    <label for="tableNameInput" class="block text-sm font-medium text-gray-300 mb-1">Table Name</label>
+                    <input type="text" id="tableNameInput" placeholder="e.g., Sales Data" class="w-full bg-gray-900/50 border border-gray-600 rounded-lg p-2 focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm">
+                </div>
+                <div id="dataPreview" class="w-full overflow-x-auto rounded-lg border border-gray-700">
+                    <!-- Data preview table will be injected here -->
+                </div>
+                <div id="columnMappingContainer" class="space-y-4">
+                    <!-- Column mapping inputs will be injected here -->
+                </div>
+            </div>
+            <div class="p-5 border-t border-[var(--border-color)] flex justify-end items-center gap-4">
+                <p id="mappingError" class="text-red-400 text-sm hidden"></p>
+                <button id="cancelMappingButton" class="bg-gray-600 hover:bg-gray-700 text-white font-semibold py-2 px-5 rounded-lg transition-colors">Cancel</button>
+                <button id="startDashboardButton" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-5 rounded-lg transition-colors">Start Dashboard</button>
+            </div>
+        </div>
+    </div>
+
 
     <!-- Dashboard View -->
     <div id="dashboardView" class="hidden opacity-0 transition-opacity duration-500">
@@ -234,6 +292,77 @@
       </div>
     </div>
 
+    <!-- Edit/Customize Card Modal -->
+    <div id="editCardModal" class="fixed inset-0 bg-black bg-opacity-70 backdrop-blur-sm flex items-center justify-center p-4 z-40 hidden opacity-0 transition-opacity duration-300">
+        <div class="glass-card rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col">
+            <div class="p-5 border-b border-[var(--border-color)] flex justify-between items-center">
+                <h2 class="text-xl font-bold">Edit Card</h2>
+                <button id="closeEditModal" class="text-gray-400 hover:text-white">&times;</button>
+            </div>
+            <div class="p-6 space-y-5 overflow-y-auto">
+                <div>
+                    <label for="editTitle" class="block text-sm font-medium text-gray-300 mb-1">Card Title</label>
+                    <input type="text" id="editTitle" class="w-full bg-gray-900/50 border border-gray-600 rounded-lg p-2 focus:ring-2 focus:ring-blue-500 focus:outline-none">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-300 mb-1">Chart Type</label>
+                    <div class="grid grid-cols-4 gap-2">
+                        <button id="editTypeBar" data-type="bar" class="chart-type-btn p-2 rounded-lg transition-colors border border-transparent hover:border-blue-500">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/></svg>
+                        </button>
+                        <button id="editTypeLine" data-type="line" class="chart-type-btn p-2 rounded-lg transition-colors border border-transparent hover:border-blue-500">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 16 12 14 20 10 4 8 12 2 12"/></svg>
+                        </button>
+                        <button id="editTypePie" data-type="pie" class="chart-type-btn p-2 rounded-lg transition-colors border border-transparent hover:border-blue-500">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/></svg>
+                        </button>
+                        <button id="editTypeTable" data-type="table" class="chart-type-btn p-2 rounded-lg transition-colors border border-transparent hover:border-blue-500">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3h18v18H3zM21 9H3M21 15H3M12 3v18"/></svg>
+                        </button>
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label for="editColor" class="block text-sm font-medium text-gray-300 mb-1">Chart Color</label>
+                        <input type="color" id="editColor" class="w-full h-10 border border-gray-600 rounded-lg p-1 cursor-pointer">
+                    </div>
+                    <div>
+                        <label for="editBarThickness" class="block text-sm font-medium text-gray-300 mb-1">Bar/Line Thickness</label>
+                        <input type="range" id="editBarThickness" min="1" max="20" value="10" class="w-full h-10 bg-gray-700 rounded-lg appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div class="flex items-center space-x-2">
+                        <input type="checkbox" id="editDataLabels" class="w-4 h-4 text-blue-600 bg-gray-700 border-gray-600 rounded focus:ring-blue-500">
+                        <label for="editDataLabels" class="text-sm font-medium text-gray-300">Show Data Labels</label>
+                    </div>
+                    <div>
+                        <label for="editSortOrder" class="block text-sm font-medium text-gray-300 mb-1">Sort Order</label>
+                        <select id="editSortOrder" class="w-full bg-gray-900/50 border border-gray-600 rounded-lg p-2 focus:ring-2 focus:ring-blue-500 focus:outline-none">
+                            <option value="DESC">Descending</option>
+                            <option value="ASC">Ascending</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+            <div class="p-5 border-t border-[var(--border-color)] flex justify-end items-center gap-4">
+                <button id="saveEditButton" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-5 rounded-lg transition-colors">Save Changes</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Confirmation Modal for Delete -->
+    <div id="confirmationModal" class="modal-backdrop hidden">
+        <div class="modal-content text-center">
+            <h3 class="text-xl font-bold mb-4">Confirm Deletion</h3>
+            <p class="mb-6">Are you sure you want to delete this card?</p>
+            <div class="flex justify-center gap-4">
+                <button id="confirmDelete" class="bg-red-600 hover:bg-red-700 text-white font-semibold py-2 px-6 rounded-lg transition-colors">Delete</button>
+                <button id="cancelDelete" class="bg-gray-600 hover:bg-gray-700 text-white font-semibold py-2 px-6 rounded-lg transition-colors">Cancel</button>
+            </div>
+        </div>
+    </div>
+
 
 <script>
     // --- Polyfill for crypto.randomUUID for non-secure contexts ---
@@ -247,6 +376,7 @@
 
     // --- DOM Elements ---
     const uploaderView = document.getElementById('uploaderView');
+    const mappingView = document.getElementById('mappingView');
     const dashboardView = document.getElementById('dashboardView');
     const dbFileInput = document.getElementById('dbFile');
     const dropZone = document.getElementById('dropZone');
@@ -254,6 +384,13 @@
     const loadingIndicator = document.getElementById('loadingIndicator');
     const loadingText = document.getElementById('loadingText');
     const errorMessage = document.getElementById('error-message');
+    const fileNameSpan = document.getElementById('fileNameSpan');
+    const tableNameInput = document.getElementById('tableNameInput');
+    const dataPreview = document.getElementById('dataPreview');
+    const columnMappingContainer = document.getElementById('columnMappingContainer');
+    const cancelMappingButton = document.getElementById('cancelMappingButton');
+    const startDashboardButton = document.getElementById('startDashboardButton');
+    const mappingError = document.getElementById('mappingError');
     const addQueryCard = document.getElementById('addQueryCard');
     const queryModal = document.getElementById('queryModal');
     const closeModal = document.getElementById('closeModal');
@@ -273,6 +410,18 @@
     const closeFilterPopover = document.getElementById('closeFilterPopover');
     const filterSearch = document.getElementById('filterSearch');
     const filterOptionsContainer = document.getElementById('filterOptionsContainer');
+    const editCardModal = document.getElementById('editCardModal');
+    const closeEditModal = document.getElementById('closeEditModal');
+    const editTitleInput = document.getElementById('editTitle');
+    const chartTypeButtons = document.querySelectorAll('.chart-type-btn');
+    const editColorInput = document.getElementById('editColor');
+    const editBarThicknessInput = document.getElementById('editBarThickness');
+    const editDataLabelsCheckbox = document.getElementById('editDataLabels');
+    const editSortOrderSelect = document.getElementById('editSortOrder');
+    const saveEditButton = document.getElementById('saveEditButton');
+    const confirmationModal = document.getElementById('confirmationModal');
+    const confirmDeleteButton = document.getElementById('confirmDelete');
+    const cancelDeleteButton = document.getElementById('cancelDelete');
 
 
     // --- App State ---
@@ -281,6 +430,9 @@
     let dashboardCards = [];
     let charts = {}; // To store chart instances
     let globalFilters = {}; // Key: columnName, Value: Array of selected values
+    let currentEditCardId = null; // Track which card is being edited
+    let currentSpreadsheetData = null; // Store the raw spreadsheet data and header for mapping
+    let currentFileName = null; // Store the file name for display
 
     // --- SQL.js Initialization ---
     async function initializeSqlJs() {
@@ -320,6 +472,11 @@
     submitQuery.addEventListener('click', handleQuerySubmit);
     exportPdfButton.addEventListener('click', handleExport);
     updateDashboardButton.addEventListener('click', renderDashboard);
+    cancelMappingButton.addEventListener('click', () => {
+        mappingView.classList.add('opacity-0');
+        setTimeout(() => uploaderView.classList.remove('hidden', 'opacity-0'), 300);
+    });
+    startDashboardButton.addEventListener('click', handleMappingConfirm);
 
     // Filter popover listeners
     closeFilterPopover.addEventListener('click', closeFilterPopoverFunc);
@@ -332,6 +489,20 @@
         }
     });
 
+    // Edit modal listeners
+    closeEditModal.addEventListener('click', () => editCardModal.classList.add('hidden', 'opacity-0'));
+    editCardModal.addEventListener('click', (e) => {
+        if (e.target === editCardModal) editCardModal.classList.add('hidden', 'opacity-0');
+    });
+    chartTypeButtons.forEach(btn => btn.addEventListener('click', onChartTypeButtonClick));
+    saveEditButton.addEventListener('click', handleEditSubmit);
+    
+    // Confirmation modal listeners
+    cancelDeleteButton.addEventListener('click', () => confirmationModal.classList.add('hidden'));
+    confirmDeleteButton.addEventListener('click', () => {
+        deleteCard(confirmDeleteButton.dataset.cardId);
+        confirmationModal.classList.add('hidden');
+    });
 
     // --- File Handling ---
     function handleFileDrop(e) {
@@ -353,11 +524,11 @@
         errorMessage.classList.add('hidden');
         
         const fileExtension = file.name.split('.').pop().toLowerCase();
-        let fileBuffer;
+        currentFileName = file.name;
         
         try {
             loadingText.textContent = "Reading file...";
-            fileBuffer = await file.arrayBuffer();
+            const fileBuffer = await file.arrayBuffer();
 
             const SQL = await sqlJsPromise;
             db = new SQL.Database(); // Create a new in-memory DB
@@ -365,23 +536,25 @@
             if (['sqlite', 'db', 'sqlite3'].includes(fileExtension)) {
                 loadingText.textContent = "Loading database...";
                 db = new SQL.Database(new Uint8Array(fileBuffer));
+                await inspectDatabase();
+                
+                // Transition directly to dashboard for SQLite files
+                uploaderView.classList.add('opacity-0');
+                setTimeout(() => {
+                    uploaderView.classList.add('hidden');
+                    dashboardView.classList.remove('hidden');
+                    setTimeout(() => dashboardView.classList.remove('opacity-0'), 50);
+                }, 300);
+
             } else if (['csv', 'xls', 'xlsx'].includes(fileExtension)) {
                 loadingText.textContent = "Parsing spreadsheet...";
-                await loadSpreadsheet(file, fileBuffer);
+                const { data, header } = await loadSpreadsheet(file, fileBuffer);
+                currentSpreadsheetData = { data, header, originalFileName: file.name };
+                showMappingView();
+                
             } else {
                 throw new Error("Unsupported file type.");
             }
-            
-            await inspectDatabase();
-            
-            // Transition to dashboard
-            uploaderView.classList.add('opacity-0');
-            setTimeout(() => {
-                uploaderView.classList.add('hidden');
-                dashboardView.classList.remove('hidden');
-                setTimeout(() => dashboardView.classList.remove('opacity-0'), 50);
-            }, 300);
-
         } catch (err) {
             console.error("File loading error:", err);
             showError(`Could not read the file: ${err.message}.`);
@@ -397,20 +570,18 @@
         let tableHeader = [];
         
         if (fileExtension === 'csv') {
-            await new Promise((resolve, reject) => {
+            const results = await new Promise((resolve, reject) => {
                 Papa.parse(file, {
                     header: true,
                     skipEmptyLines: true,
-                    complete: (results) => {
-                        data = results.data;
-                        if (data.length > 0) {
-                            tableHeader = Object.keys(data[0]);
-                        }
-                        resolve();
-                    },
-                    error: (error) => reject(error)
+                    complete: resolve,
+                    error: reject
                 });
             });
+            data = results.data;
+            if (data.length > 0) {
+                tableHeader = Object.keys(data[0]);
+            }
         } else if (['xls', 'xlsx'].includes(fileExtension)) {
             const workbook = XLSX.read(buffer, { type: 'array' });
             const sheetName = workbook.SheetNames[0];
@@ -427,28 +598,8 @@
         if (data.length === 0) {
             throw new Error("The file is empty or could not be parsed.");
         }
-
-        const tableName = sanitizeTableName(file.name);
-        // Create table with TEXT columns by default
-        const columns = tableHeader.map(c => `"${sanitizeColumnName(c)}" TEXT`);
-        const placeholders = tableHeader.map(() => '?').join(', ');
         
-        db.exec(`CREATE TABLE IF NOT EXISTS "${tableName}" (${columns.join(', ')});`);
-
-        const insertStmt = db.prepare(`INSERT INTO "${tableName}" VALUES (${placeholders});`);
-        db.run('BEGIN TRANSACTION;');
-        try {
-            data.forEach(row => {
-                const values = Array.isArray(row) ? row : tableHeader.map(h => row[h]);
-                insertStmt.run(values);
-            });
-            db.run('COMMIT;');
-        } catch (e) {
-            db.run('ROLLBACK;');
-            throw new Error(`Failed to insert data: ${e.message}`);
-        } finally {
-            insertStmt.free();
-        }
+        return { data, header: tableHeader };
     }
     
     // Updated sanitization logic for file names
@@ -482,6 +633,197 @@
         errorMessage.classList.remove('hidden');
     }
     
+    // --- Mapping View Logic ---
+    function showMappingView() {
+        uploaderView.classList.add('hidden', 'opacity-0');
+        mappingView.classList.remove('hidden');
+        setTimeout(() => mappingView.classList.remove('opacity-0'), 10);
+        
+        // Set default table name
+        const defaultTableName = currentFileName.split('.').slice(0, -1).join('.');
+        tableNameInput.value = defaultTableName;
+
+        const { header, data } = currentSpreadsheetData;
+        
+        // Populate data preview table
+        let previewHTML = '<table class="w-full text-sm text-left table-auto"><thead><tr class="border-b border-gray-700">';
+        header.forEach(h => previewHTML += `<th class="p-2 whitespace-nowrap">${h}</th>`);
+        previewHTML += '</tr></thead><tbody>';
+        data.slice(0, 10).forEach(row => {
+            previewHTML += '<tr class="border-b border-gray-800">';
+            const values = Array.isArray(row) ? row : header.map(h => row[h]);
+            values.forEach(cell => previewHTML += `<td class="p-2 whitespace-nowrap">${cell === null ? 'NULL' : cell}</td>`);
+            previewHTML += '</tr>';
+        });
+        previewHTML += '</tbody></table>';
+        dataPreview.innerHTML = previewHTML;
+        
+        // Populate column mapping inputs
+        columnMappingContainer.innerHTML = '';
+        header.forEach((originalName) => {
+            const container = document.createElement('div');
+            container.className = 'flex flex-col md:flex-row items-center gap-2 p-3 rounded-lg border border-gray-700';
+            
+            // Original Name
+            const originalNameDiv = document.createElement('div');
+            originalNameDiv.className = 'flex-1 text-sm text-gray-400 truncate';
+            originalNameDiv.textContent = originalName;
+            
+            // New Name Input
+            const nameInput = document.createElement('input');
+            nameInput.type = 'text';
+            nameInput.value = sanitizeColumnName(originalName);
+            nameInput.dataset.originalName = originalName;
+            nameInput.placeholder = 'New Column Name';
+            nameInput.className = 'flex-1 w-full md:w-auto bg-gray-900/50 border border-gray-600 rounded-lg p-2 focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm';
+            
+            // Type Select
+            const typeSelect = document.createElement('select');
+            typeSelect.className = 'w-full md:w-auto bg-gray-900/50 border border-gray-600 rounded-lg p-2 focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm';
+            const guessedType = guessDataType(originalName, data);
+            
+            const types = ['STRING', 'INTEGER', 'REAL', 'DATE', 'DATETIME'];
+            types.forEach(type => {
+                const option = document.createElement('option');
+                option.value = type;
+                option.textContent = type;
+                if (type === guessedType) {
+                    option.selected = true;
+                }
+                typeSelect.appendChild(option);
+            });
+            
+            // Filter Checkbox
+            const filterCheckboxContainer = document.createElement('div');
+            filterCheckboxContainer.className = 'flex items-center space-x-2';
+            const filterCheckbox = document.createElement('input');
+            filterCheckbox.type = 'checkbox';
+            filterCheckbox.checked = true; // Default to true
+            filterCheckbox.className = 'w-4 h-4 text-blue-600 bg-gray-700 border-gray-600 rounded focus:ring-blue-500';
+            filterCheckbox.id = `filter-${sanitizeColumnName(originalName)}`;
+            const filterLabel = document.createElement('label');
+            filterLabel.htmlFor = `filter-${sanitizeColumnName(originalName)}`;
+            filterLabel.textContent = "Include in global filters?";
+            filterLabel.className = 'text-sm font-medium text-gray-300 whitespace-nowrap';
+            filterCheckboxContainer.append(filterCheckbox, filterLabel);
+
+            container.append(originalNameDiv, nameInput, typeSelect, filterCheckboxContainer);
+            columnMappingContainer.appendChild(container);
+        });
+    }
+
+    function guessDataType(columnName, data) {
+        let isNumber = true;
+        let isDate = true;
+        
+        for (let i = 0; i < Math.min(data.length, 50); i++) {
+            const value = data[i][columnName] || data[i][Object.keys(data[0]).indexOf(columnName)];
+            
+            if (value === null || value === '') continue;
+            
+            // Check for number
+            if (isNumber && (isNaN(parseFloat(value)) || !isFinite(value))) {
+                isNumber = false;
+            }
+            
+            // Check for date (basic check)
+            if (isDate && isNaN(new Date(value).getTime())) {
+                isDate = false;
+            }
+        }
+        
+        if (isNumber) return 'REAL';
+        if (isDate) return 'DATETIME';
+        return 'STRING';
+    }
+    
+    async function handleMappingConfirm() {
+        const tableDisplayName = tableNameInput.value || currentFileName.split('.').slice(0, -1).join('.');
+        const tableName = sanitizeTableName(currentFileName);
+        const newColumns = [];
+        const oldToNewMap = {};
+
+        const mappingInputs = columnMappingContainer.querySelectorAll('input[type="text"]');
+        const mappingSelects = columnMappingContainer.querySelectorAll('select');
+        const filterCheckboxes = columnMappingContainer.querySelectorAll('input[type="checkbox"]');
+        
+        // Validate and gather user-defined schema
+        mappingInputs.forEach((input, index) => {
+            const originalName = input.dataset.originalName;
+            const newName = sanitizeColumnName(input.value);
+            const newType = mappingSelects[index].value;
+            const isFilterable = filterCheckboxes[index].checked;
+
+            if (!newName) {
+                mappingError.textContent = 'Column names cannot be empty.';
+                mappingError.classList.remove('hidden');
+                setTimeout(() => mappingError.classList.add('hidden'), 3000);
+                return;
+            }
+            
+            newColumns.push({ originalName, newName, newType, isFilterable });
+            oldToNewMap[originalName] = newName;
+        });
+        
+        if (mappingError.classList.contains('hidden') === false) return; // Exit if validation failed
+
+        // Recreate the in-memory database with the new schema
+        db.close();
+        const SQL = await sqlJsPromise;
+        db = new SQL.Database();
+        
+        const columnDefinitions = newColumns.map(col => `"${col.newName}" ${col.newType}`).join(', ');
+        db.exec(`CREATE TABLE IF NOT EXISTS "${tableName}" (${columnDefinitions});`);
+
+        const placeholders = newColumns.map(() => '?').join(', ');
+        const insertStmt = db.prepare(`INSERT INTO "${tableName}" VALUES (${placeholders});`);
+
+        db.run('BEGIN TRANSACTION;');
+        try {
+            currentSpreadsheetData.data.forEach(row => {
+                const values = newColumns.map(col => {
+                    const originalValue = row[col.originalName] !== undefined ? row[col.originalName] : row[Object.keys(row).indexOf(col.originalName)];
+                    if (originalValue === null || originalValue === undefined) return null;
+                    if (col.newType === 'INTEGER' || col.newType === 'REAL') {
+                        const parsed = parseFloat(originalValue);
+                        return isNaN(parsed) ? null : parsed;
+                    }
+                    return String(originalValue);
+                });
+                insertStmt.run(values);
+            });
+            db.run('COMMIT;');
+        } catch (e) {
+            db.run('ROLLBACK;');
+            showError(`Failed to insert data with new schema: ${e.message}`);
+            return;
+        } finally {
+            insertStmt.free();
+        }
+        
+        // Populate dbSchema manually after mapping
+        dbSchema = {};
+        dbSchema.tables = [tableName];
+        dbSchema[tableName] = { 
+            displayName: tableDisplayName,
+            columns: newColumns.map(col => ({
+                name: col.newName,
+                type: col.newType.toUpperCase(),
+                isFilterable: col.isFilterable
+            }))
+        };
+        
+        populateTableSelect(); // Update the query builder table dropdown
+        
+        // Transition to dashboard
+        mappingView.classList.add('opacity-0');
+        setTimeout(() => {
+            mappingView.classList.add('hidden');
+            dashboardView.classList.remove('hidden');
+            setTimeout(() => dashboardView.classList.remove('opacity-0'), 50);
+        }, 300);
+    }
+    
     // --- Database Schema Inspection ---
     async function inspectDatabase() {
         const tablesResult = db.exec("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%';");
@@ -491,28 +833,17 @@
         dbSchema.tables = tableNames;
 
         for (const tableName of tableNames) {
-            // Re-inspect the schema, but this time, infer column types from the data
             const columnsResult = db.exec(`PRAGMA table_info("${tableName}");`);
             const columns = columnsResult[0].values.map(col => ({
                 name: col[1],
                 type: col[2].toUpperCase(),
-                inferredType: 'TEXT' // Default to TEXT
+                isFilterable: true,
             }));
             
-            // Now, run a query to infer numeric types
-            for (const col of columns) {
-                const sampleQuery = `SELECT "${col.name}" FROM "${tableName}" WHERE "${col.name}" IS NOT NULL LIMIT 10;`;
-                const sampleResult = runQuery(sampleQuery);
-                const allNumeric = sampleResult.values.every(row => {
-                    const value = row[0];
-                    return !isNaN(parseFloat(value)) && isFinite(value);
-                });
-                if (allNumeric) {
-                    col.inferredType = 'NUMERIC';
-                }
-            }
-
-            dbSchema[tableName] = { columns };
+            dbSchema[tableName] = { 
+                displayName: tableName,
+                columns: columns 
+            };
         }
         populateTableSelect();
     }
@@ -523,7 +854,7 @@
         dbSchema.tables.forEach(name => {
             const option = document.createElement('option');
             option.value = name;
-            option.textContent = name;
+            option.textContent = dbSchema[name].displayName || name;
             tableSelect.appendChild(option);
         });
     }
@@ -531,7 +862,7 @@
     function populateSummarizeColumn(tableName) {
         const { columns } = dbSchema[tableName];
         // Now use the inferredType to filter for numeric columns
-        const numericColumns = columns.filter(c => c.inferredType === 'NUMERIC');
+        const numericColumns = columns.filter(c => ['NUMERIC', 'INTEGER', 'REAL'].includes(c.type));
 
         summarizeColumn.innerHTML = '<option disabled selected>Select Column</option>';
         if (summarizeFunc.value !== 'COUNT') {
@@ -596,7 +927,7 @@
              return;
         }
         const type = selectedOption.dataset.type;
-        const isDateType = ['DATE', 'DATETIME', 'TIMESTAMP'].includes(type);
+        const isDateType = ['DATE', 'DATETIME'].includes(type);
         groupByDate.classList.toggle('hidden', !isDateType);
     }
     
@@ -640,7 +971,10 @@
             chartType: 'bar',
             custom: {
                 title: `${aggFunc} of ${aggColumn || 'Rows'} by ${groupBy}`,
-                color: '#3b82f6'
+                color: '#3b82f6',
+                dataLabels: false,
+                thickness: 10,
+                sortOrder: 'DESC'
             },
             size: { width: 'auto', height: '400px' }
         };
@@ -690,7 +1024,7 @@
             }
         }
         let whereClause = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
-        const orderByClause = `ORDER BY 2 DESC LIMIT 50`; // Order by the second column (value), limit for performance
+        const orderByClause = `ORDER BY 2 ${config.custom.sortOrder || 'DESC'} LIMIT 50`;
 
         return `SELECT ${selectClause} FROM "${config.table}" AS T1 ${whereClause} ${groupByClause} ${orderByClause};`;
     }
@@ -729,7 +1063,6 @@
             }
         }
 
-
         const sql = buildQuery(config, globalFilters);
         const result = runQuery(sql);
 
@@ -741,19 +1074,24 @@
         title.textContent = config.custom.title;
         header.appendChild(title);
 
-        // Controls
+        // Card controls
         const controls = document.createElement('div');
-        controls.className = 'flex gap-1';
-        ['bar', 'line', 'pie', 'table'].forEach(type => {
-            const btn = document.createElement('button');
-            btn.innerHTML = getIcon(type);
-            btn.className = `p-1 rounded ${config.chartType === type ? 'bg-blue-600/50' : 'hover:bg-gray-700'}`;
-            btn.onclick = () => {
-                config.chartType = type;
-                renderDashboard();
-            };
-            controls.appendChild(btn);
-        });
+        controls.className = 'flex gap-1 items-center';
+        
+        // Edit button
+        const editBtn = document.createElement('button');
+        editBtn.className = 'p-1 rounded hover:bg-gray-700';
+        editBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>`;
+        editBtn.onclick = () => openEditModal(config.id);
+        controls.appendChild(editBtn);
+
+        // Delete button
+        const deleteBtn = document.createElement('button');
+        deleteBtn.className = 'p-1 rounded hover:bg-gray-700';
+        deleteBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>`;
+        deleteBtn.onclick = () => showConfirmationModal(config.id);
+        controls.appendChild(deleteBtn);
+
         header.appendChild(controls);
 
         // Chart/Table container
@@ -788,33 +1126,54 @@
             charts[config.id].destroy();
         }
 
+        const datasets = [{
+            label: config.aggFunc,
+            data: values,
+            backgroundColor: config.chartType === 'pie' ? generateColors(values.length) : config.custom.color,
+            borderColor: config.custom.color,
+            borderWidth: config.custom.thickness,
+            tension: 0.1,
+            barThickness: config.custom.thickness,
+        }];
+
+        const plugins = [ChartDataLabels];
+        const options = {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    display: config.chartType === 'pie',
+                    labels: { color: 'white' }
+                },
+                datalabels: {
+                    display: config.custom.dataLabels,
+                    color: 'white',
+                    anchor: 'end',
+                    align: 'top'
+                }
+            },
+            scales: {
+                x: { display: config.chartType !== 'pie', ticks: { color: 'white', autoSkip: true, maxTicksLimit: 10 } },
+                y: { display: config.chartType !== 'pie', ticks: { color: 'white' } }
+            }
+        };
+
+        if (config.chartType === 'pie') {
+            options.plugins.datalabels.align = 'center';
+            options.plugins.datalabels.formatter = (value, context) => {
+                const total = context.chart.data.datasets[0].data.reduce((acc, curr) => acc + curr, 0);
+                const percentage = Math.round((value / total) * 100);
+                return `${percentage}%`;
+            };
+        } else {
+            options.plugins.datalabels.formatter = (value) => value.toLocaleString();
+        }
+
         charts[config.id] = new Chart(canvas, {
             type: config.chartType,
-            data: {
-                labels: labels,
-                datasets: [{
-                    label: config.aggFunc,
-                    data: values,
-                    backgroundColor: config.chartType === 'pie' ? generateColors(values.length) : config.custom.color,
-                    borderColor: config.custom.color,
-                    borderWidth: 1,
-                    tension: 0.1
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: {
-                        display: config.chartType === 'pie',
-                        labels: { color: 'white' }
-                    }
-                },
-                scales: {
-                    x: { display: config.chartType !== 'pie', ticks: { color: 'white', autoSkip: true, maxTicksLimit: 10 } },
-                    y: { display: config.chartType !== 'pie', ticks: { color: 'white' } }
-                }
-            }
+            data: { labels, datasets },
+            options,
+            plugins
         });
     }
 
@@ -838,11 +1197,15 @@
     function updateGlobalFilters() {
         const activeColumns = new Map();
         dashboardCards.forEach(card => {
-            dbSchema[card.table].columns.forEach(col => {
-                if(!activeColumns.has(col.name)) {
-                     activeColumns.set(col.name, col.type);
-                }
-            });
+            const tableSchema = dbSchema[card.table];
+            if (tableSchema) {
+                tableSchema.columns.forEach(col => {
+                    // Only include columns marked as filterable
+                    if(col.isFilterable && !activeColumns.has(col.name)) {
+                         activeColumns.set(col.name, col);
+                    }
+                });
+            }
         });
 
         const initialFilterMsg = document.getElementById('initialFilterMsg');
@@ -850,14 +1213,13 @@
             initialFilterMsg.classList.toggle('hidden', activeColumns.size > 0);
         }
         globalFiltersContainer.innerHTML = '';
-        activeColumns.forEach((colType, colName) => {
-            const filterId = `global-filter-${colName.replace(/[^a-zA-Z0-9_]/g, '_')}`;
-            
+        activeColumns.forEach((col, colName) => {
             const btn = document.createElement('button');
             btn.className = `filter-button relative bg-gray-900/50 hover:bg-gray-800/50 text-white font-semibold py-2 px-4 rounded-lg transition-colors text-sm`;
             btn.textContent = colName;
             btn.dataset.column = colName;
-            
+            btn.dataset.type = col.type; // Pass the column type to the button
+
             // Add a counter to the button if filters are active
             if (globalFilters[colName] && globalFilters[colName].length > 0) {
                 const countSpan = document.createElement('span');
@@ -886,6 +1248,19 @@
         filterPopover.classList.remove('active');
     }
 
+    function getDisplayValue(value, type) {
+        if (!value) return "NULL";
+        if (['DATE', 'DATETIME'].includes(type) && typeof value === 'string') {
+            try {
+                const date = new Date(value);
+                return date.toISOString().split('T')[0]; // Simple YYYY-MM-DD format
+            } catch(e) {
+                return value; // Fallback
+            }
+        }
+        return value;
+    }
+
     function populateFilterOptions(columnName, searchText = '') {
         filterOptionsContainer.innerHTML = '<p class="text-center text-gray-500">Loading...</p>';
         const tableNameForFilter = dbSchema.tables.find(t => dbSchema[t].columns.some(c => c.name === columnName));
@@ -893,6 +1268,7 @@
             filterOptionsContainer.innerHTML = '<p class="text-center text-gray-500">No data found.</p>';
             return;
         }
+        const columnType = dbSchema[tableNameForFilter].columns.find(c => c.name === columnName).type;
 
         const distinctValuesQuery = `SELECT DISTINCT "${columnName}" FROM "${tableNameForFilter}" WHERE "${columnName}" IS NOT NULL ORDER BY "${columnName}" ASC LIMIT 1000;`;
         const results = runQuery(distinctValuesQuery);
@@ -907,6 +1283,7 @@
 
             filteredValues.forEach(row => {
                 const value = row[0];
+                const displayValue = getDisplayValue(value, columnType);
                 const checkboxId = `${columnName}-${value.replace(/[^a-zA-Z0-9_]/g, '_')}`;
                 
                 const div = document.createElement('div');
@@ -931,7 +1308,7 @@
 
                 const label = document.createElement('label');
                 label.htmlFor = checkboxId;
-                label.textContent = value;
+                label.textContent = displayValue;
                 label.className = 'text-gray-300 hover:text-white cursor-pointer';
 
                 div.appendChild(input);
@@ -1019,6 +1396,70 @@
             console.error('Export failed', e);
             showError("Could not export to PDF. Check console for details.");
         }
+    }
+
+    // --- Card Deletion and Editing ---
+    function showConfirmationModal(cardId) {
+        confirmDeleteButton.dataset.cardId = cardId;
+        confirmationModal.classList.remove('hidden');
+    }
+
+    function deleteCard(cardId) {
+        dashboardCards = dashboardCards.filter(card => card.id !== cardId);
+        renderDashboard();
+    }
+
+    function openEditModal(cardId) {
+        currentEditCardId = cardId;
+        const cardConfig = dashboardCards.find(card => card.id === cardId);
+        if (!cardConfig) return;
+
+        // Populate modal fields with current config
+        editTitleInput.value = cardConfig.custom.title;
+        editColorInput.value = cardConfig.custom.color;
+        editBarThicknessInput.value = cardConfig.custom.thickness;
+        editDataLabelsCheckbox.checked = cardConfig.custom.dataLabels;
+        editSortOrderSelect.value = cardConfig.custom.sortOrder;
+
+        // Update chart type buttons visual state using data attribute
+        chartTypeButtons.forEach(btn => {
+            if (btn.dataset.type === cardConfig.chartType) {
+                btn.dataset.selected = "true";
+            } else {
+                btn.dataset.selected = "false";
+            }
+        });
+
+        editCardModal.classList.remove('hidden');
+        setTimeout(() => editCardModal.classList.remove('opacity-0'), 10);
+    }
+    
+    function onChartTypeButtonClick(e) {
+        chartTypeButtons.forEach(btn => btn.dataset.selected = "false");
+        e.currentTarget.dataset.selected = "true";
+    }
+
+    function handleEditSubmit() {
+        if (!currentEditCardId) return;
+
+        const cardIndex = dashboardCards.findIndex(card => card.id === currentEditCardId);
+        if (cardIndex === -1) return;
+
+        // Find selected chart type using the new data attribute
+        const selectedTypeBtn = document.querySelector('.chart-type-btn[data-selected="true"]');
+        const newChartType = selectedTypeBtn ? selectedTypeBtn.dataset.type : dashboardCards[cardIndex].chartType;
+
+        // Update card config
+        dashboardCards[cardIndex].custom.title = editTitleInput.value;
+        dashboardCards[cardIndex].custom.color = editColorInput.value;
+        dashboardCards[cardIndex].custom.thickness = editBarThicknessInput.value;
+        dashboardCards[cardIndex].custom.dataLabels = editDataLabelsCheckbox.checked;
+        dashboardCards[cardIndex].custom.sortOrder = editSortOrderSelect.value;
+        dashboardCards[cardIndex].chartType = newChartType;
+
+        // Re-render dashboard to show changes
+        renderDashboard();
+        closeEditModal.click();
     }
 
 

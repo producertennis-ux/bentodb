@@ -1,0 +1,800 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BentoDB | Your Interactive Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #1a1a1a;
+            --card-bg: rgba(40, 40, 40, 0.6);
+            --border-color: rgba(255, 255, 255, 0.1);
+            --text-color: #f0f0f0;
+            --text-muted-color: #a0a0a0;
+            --accent-color: #3b82f6;
+            --glass-blur: 16px;
+        }
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            background-image: radial-gradient(circle at 1px 1px, rgba(255,255,255,0.1) 1px, transparent 0);
+            background-size: 20px 20px;
+        }
+        .glass-card {
+            background-color: var(--card-bg);
+            backdrop-filter: blur(var(--glass-blur));
+            -webkit-backdrop-filter: blur(var(--glass-blur));
+            border: 1px solid var(--border-color);
+            transition: all 0.2s ease-in-out;
+        }
+        .bento-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 1.5rem;
+        }
+        /* Custom scrollbar for a better look */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(0,0,0,0.2);
+            border-radius: 10px;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(255,255,255,0.2);
+            border-radius: 10px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(255,255,255,0.3);
+        }
+        .resize-handle {
+            position: absolute;
+            width: 16px;
+            height: 16px;
+            right: -4px;
+            bottom: -4px;
+            cursor: nwse-resize;
+            background-image: radial-gradient(circle at 2px 2px, rgba(255,255,255,0.5) 1px, transparent 0);
+            background-size: 8px 8px;
+            opacity: 0.5;
+            transition: opacity 0.2s ease-in-out;
+        }
+        .bento-item:hover .resize-handle {
+            opacity: 1;
+        }
+        .loading-spinner {
+            border: 4px solid var(--border-color);
+            border-top: 4px solid var(--accent-color);
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="min-h-screen">
+
+    <!-- Uploader View -->
+    <div id="uploaderView" class="fixed inset-0 flex items-center justify-center p-4 z-50 transition-opacity duration-300">
+        <div class="w-full max-w-md text-center">
+            <div class="glass-card p-8 rounded-2xl shadow-2xl">
+                <h1 class="text-3xl font-bold mb-2">BentoDB</h1>
+                <p class="text-md text-gray-400 mb-6">Create beautiful, interactive dashboards from your SQLite databases.</p>
+                <div id="dropZone" class="border-2 border-dashed border-gray-600 rounded-xl p-8 cursor-pointer hover:border-blue-500 hover:bg-gray-800/20 transition-all">
+                    <input type="file" id="dbFile" accept=".sqlite, .db, .sqlite3" class="hidden">
+                    <p class="text-gray-400">Drag & Drop your database file here</p>
+                    <p class="text-gray-500 text-sm my-2">or</p>
+                    <button id="browseButton" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-5 rounded-lg transition-colors">Browse Files</button>
+                </div>
+                 <div id="loadingIndicator" class="hidden mt-6 flex flex-col items-center">
+                    <div class="loading-spinner"></div>
+                    <p class="mt-3 text-gray-400">Loading database...</p>
+                </div>
+                <p id="error-message" class="text-red-500 mt-4 text-sm hidden"></p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Dashboard View -->
+    <div id="dashboardView" class="hidden opacity-0 transition-opacity duration-500">
+        <header class="sticky top-0 z-30 p-4 glass-card m-4 rounded-xl">
+            <div class="flex flex-col md:flex-row justify-between items-center gap-4">
+                <div class="flex items-center gap-3">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
+                    <h1 class="text-xl font-bold">Dashboard</h1>
+                </div>
+                <div id="globalFilters" class="flex flex-wrap gap-2 items-center">
+                    <!-- Global filters will be injected here -->
+                    <span class="text-sm text-gray-500">Global filters will appear here once you add cards.</span>
+                </div>
+                <button id="exportPdf" class="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2 px-4 rounded-lg transition-colors flex items-center gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                    Export PDF
+                </button>
+            </div>
+        </header>
+
+        <main id="dashboardGrid" class="p-4 md:p-8 bento-grid">
+            <div id="addQueryCard" class="glass-card rounded-2xl flex items-center justify-center min-h-[200px] cursor-pointer border-2 border-dashed border-gray-600 hover:border-blue-500 hover:bg-gray-800/20 transition-all">
+                <div class="text-center">
+                    <div class="text-4xl text-gray-500">+</div>
+                    <p class="mt-2 font-semibold">Draft Query</p>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Query Builder Modal -->
+    <div id="queryModal" class="fixed inset-0 bg-black bg-opacity-70 backdrop-blur-sm flex items-center justify-center p-4 z-40 hidden opacity-0 transition-opacity duration-300">
+        <div class="glass-card rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col">
+            <div class="p-5 border-b border-[var(--border-color)] flex justify-between items-center">
+                <h2 class="text-xl font-bold">Query Builder</h2>
+                <button id="closeModal" class="text-gray-400 hover:text-white">&times;</button>
+            </div>
+            <div class="p-6 space-y-5 overflow-y-auto">
+                <!-- Table Selection -->
+                <div>
+                    <label for="tableSelect" class="block text-sm font-medium text-gray-300 mb-1">1. Select Table</label>
+                    <select id="tableSelect" class="w-full bg-gray-900/50 border border-gray-600 rounded-lg p-2 focus:ring-2 focus:ring-blue-500 focus:outline-none"></select>
+                </div>
+                <!-- Summarize -->
+                <div>
+                    <label class="block text-sm font-medium text-gray-300 mb-1">2. Summarize (Aggregate)</label>
+                    <div class="grid grid-cols-2 gap-4">
+                        <select id="summarizeFunc" class="w-full bg-gray-900/50 border border-gray-600 rounded-lg p-2 focus:ring-2 focus:ring-blue-500 focus:outline-none">
+                            <option value="COUNT">Count</option>
+                            <option value="SUM">Sum</option>
+                            <option value="AVG">Average</option>
+                            <option value="MIN">Minimum</option>
+                            <option value="MAX">Maximum</option>
+                        </select>
+                        <select id="summarizeColumn" class="w-full bg-gray-900/50 border border-gray-600 rounded-lg p-2 focus:ring-2 focus:ring-blue-500 focus:outline-none" disabled>
+                            <option>Select Column</option>
+                        </select>
+                    </div>
+                </div>
+                <!-- Group By -->
+                <div>
+                    <label class="block text-sm font-medium text-gray-300 mb-1">3. By (Group By)</label>
+                    <div class="grid grid-cols-2 gap-4">
+                        <select id="groupByColumn" class="w-full bg-gray-900/50 border border-gray-600 rounded-lg p-2 focus:ring-2 focus:ring-blue-500 focus:outline-none">
+                            <option>Select Column</option>
+                        </select>
+                        <select id="groupByDate" class="w-full bg-gray-900/50 border border-gray-600 rounded-lg p-2 focus:ring-2 focus:ring-blue-500 focus:outline-none hidden">
+                            <option value="auto">Auto</option>
+                            <option value="year">Year</option>
+                            <option value="month">Month</option>
+                            <option value="week">Week</option>
+                            <option value="day">Day</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+            <div class="p-5 border-t border-[var(--border-color)] flex justify-end items-center gap-4">
+                <p id="modal-error" class="text-red-400 text-sm hidden"></p>
+                <button id="submitQuery" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-5 rounded-lg transition-colors">Create Card</button>
+            </div>
+        </div>
+    </div>
+
+
+<script>
+    // --- Polyfill for crypto.randomUUID for non-secure contexts ---
+    if (typeof crypto === 'undefined' || !crypto.randomUUID) {
+        crypto.randomUUID = () => {
+            return ([1e7] + -1e3 + -4e3 + -8e3 + -1e11).replace(/[018]/g, c =>
+                (c ^ (crypto.getRandomValues(new Uint8Array(1))[0] & (15 >> (c / 4)))).toString(16)
+            );
+        };
+    }
+
+    // --- DOM Elements ---
+    const uploaderView = document.getElementById('uploaderView');
+    const dashboardView = document.getElementById('dashboardView');
+    const dbFileInput = document.getElementById('dbFile');
+    const dropZone = document.getElementById('dropZone');
+    const browseButton = document.getElementById('browseButton');
+    const loadingIndicator = document.getElementById('loadingIndicator');
+    const errorMessage = document.getElementById('error-message');
+    const addQueryCard = document.getElementById('addQueryCard');
+    const queryModal = document.getElementById('queryModal');
+    const closeModal = document.getElementById('closeModal');
+    const tableSelect = document.getElementById('tableSelect');
+    const summarizeFunc = document.getElementById('summarizeFunc');
+    const summarizeColumn = document.getElementById('summarizeColumn');
+    const groupByColumn = document.getElementById('groupByColumn');
+    const groupByDate = document.getElementById('groupByDate');
+    const submitQuery = document.getElementById('submitQuery');
+    const dashboardGrid = document.getElementById('dashboardGrid');
+    const globalFiltersContainer = document.getElementById('globalFilters');
+    const exportPdfButton = document.getElementById('exportPdf');
+    const modalError = document.getElementById('modal-error');
+
+
+    // --- App State ---
+    let db;
+    let dbSchema = {};
+    let dashboardCards = [];
+    let charts = {}; // To store chart instances
+
+    // --- SQL.js Initialization ---
+    async function initializeSqlJs() {
+        try {
+            const SQL = await initSqlJs({
+                locateFile: file => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/${file}`
+            });
+            return SQL;
+        } catch (err) {
+            console.error(err);
+            showError("Failed to load SQL.js library. Please check your internet connection.");
+        }
+    }
+
+    let sqlJsPromise = initializeSqlJs();
+
+    // --- Event Listeners ---
+    browseButton.addEventListener('click', () => dbFileInput.click());
+    dbFileInput.addEventListener('change', handleFileSelect);
+    dropZone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        dropZone.classList.add('border-blue-500', 'bg-gray-800/20');
+    });
+    dropZone.addEventListener('dragleave', () => {
+        dropZone.classList.remove('border-blue-500', 'bg-gray-800/20');
+    });
+    dropZone.addEventListener('drop', handleFileDrop);
+    addQueryCard.addEventListener('click', openQueryModal);
+    closeModal.addEventListener('click', closeQueryModal);
+    queryModal.addEventListener('click', (e) => {
+        if (e.target === queryModal) closeQueryModal();
+    });
+
+    tableSelect.addEventListener('change', onTableSelectChange);
+    summarizeFunc.addEventListener('change', onSummarizeFuncChange);
+    groupByColumn.addEventListener('change', onGroupByColumnChange);
+    submitQuery.addEventListener('click', handleQuerySubmit);
+    exportPdfButton.addEventListener('click', handleExport);
+
+
+    // --- File Handling ---
+    function handleFileDrop(e) {
+        e.preventDefault();
+        dropZone.classList.remove('border-blue-500', 'bg-gray-800/20');
+        const files = e.dataTransfer.files;
+        if (files.length) {
+            dbFileInput.files = files;
+            handleFileSelect({ target: { files } });
+        }
+    }
+
+    async function handleFileSelect(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        loadingIndicator.classList.remove('hidden');
+        dropZone.classList.add('hidden');
+        errorMessage.classList.add('hidden');
+
+        try {
+            // Await for the sql.js library to be ready first.
+            const SQL = await sqlJsPromise;
+            // Then, read the file into a buffer. This can prevent permission issues
+            // in some environments where file access permission expires quickly.
+            const fileBuffer = await file.arrayBuffer();
+            db = new SQL.Database(new Uint8Array(fileBuffer));
+            await inspectDatabase();
+            
+            // Transition to dashboard
+            uploaderView.classList.add('opacity-0');
+            setTimeout(() => {
+                uploaderView.classList.add('hidden');
+                dashboardView.classList.remove('hidden');
+                setTimeout(() => dashboardView.classList.remove('opacity-0'), 50);
+            }, 300);
+
+        } catch (err) {
+            console.error("Database Error:", err);
+            showError("Could not read the database file. Please ensure it's a valid SQLite file.");
+            loadingIndicator.classList.add('hidden');
+            dropZone.classList.remove('hidden');
+        }
+    }
+
+    function showError(message) {
+        errorMessage.textContent = message;
+        errorMessage.classList.remove('hidden');
+    }
+    
+    // --- Database Schema Inspection ---
+    async function inspectDatabase() {
+        const tablesResult = db.exec("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%';");
+        if (!tablesResult.length) return;
+
+        const tableNames = tablesResult[0].values.map(v => v[0]);
+        dbSchema.tables = tableNames;
+
+        for (const tableName of tableNames) {
+            const columnsResult = db.exec(`PRAGMA table_info(${tableName});`);
+            const columns = columnsResult[0].values.map(col => ({
+                name: col[1],
+                type: col[2].toUpperCase(),
+            }));
+            dbSchema[tableName] = { columns };
+        }
+        populateTableSelect();
+    }
+    
+    // --- Query Modal Logic ---
+    function populateTableSelect() {
+        tableSelect.innerHTML = '<option disabled selected>Select a table</option>';
+        dbSchema.tables.forEach(name => {
+            const option = document.createElement('option');
+            option.value = name;
+            option.textContent = name;
+            tableSelect.appendChild(option);
+        });
+    }
+    
+    function populateSummarizeColumn(tableName) {
+        const { columns } = dbSchema[tableName];
+        const numericColumns = columns.filter(c => ['INTEGER', 'REAL', 'FLOAT', 'DOUBLE', 'NUMERIC'].includes(c.type));
+
+        summarizeColumn.innerHTML = '<option disabled selected>Select Column</option>';
+        if (summarizeFunc.value !== 'COUNT') {
+            numericColumns.forEach(col => {
+                const option = document.createElement('option');
+                option.value = col.name;
+                option.textContent = col.name;
+                summarizeColumn.appendChild(option);
+            });
+        }
+    }
+
+    function onTableSelectChange() {
+        const tableName = tableSelect.value;
+        if (!tableName || !dbSchema[tableName]) return;
+
+        const { columns } = dbSchema[tableName];
+        
+        populateSummarizeColumn(tableName);
+        
+        groupByColumn.innerHTML = '<option disabled selected>Select Column</option>';
+        columns.forEach(col => {
+            const option = document.createElement('option');
+            option.value = col.name;
+            option.dataset.type = col.type;
+            option.textContent = col.name;
+            groupByColumn.appendChild(option);
+        });
+        
+        onSummarizeFuncChange();
+        onGroupByColumnChange();
+    }
+    
+    function onSummarizeFuncChange() {
+        const isCount = summarizeFunc.value === 'COUNT';
+        summarizeColumn.disabled = isCount;
+        if (isCount) {
+            summarizeColumn.innerHTML = '<option>Not Applicable</option>';
+        } else {
+            const tableName = tableSelect.value;
+            if (tableName && dbSchema[tableName]) {
+                populateSummarizeColumn(tableName);
+            }
+        }
+    }
+
+    function onGroupByColumnChange() {
+        const selectedOption = groupByColumn.options[groupByColumn.selectedIndex];
+        if (!selectedOption) {
+             groupByDate.classList.add('hidden');
+             return;
+        }
+        const type = selectedOption.dataset.type;
+        const isDateType = ['DATE', 'DATETIME', 'TIMESTAMP'].includes(type);
+        groupByDate.classList.toggle('hidden', !isDateType);
+    }
+    
+    function openQueryModal() {
+        queryModal.classList.remove('hidden');
+        setTimeout(() => queryModal.classList.remove('opacity-0'), 10);
+    }
+
+    function closeQueryModal() {
+        queryModal.classList.add('opacity-0');
+        setTimeout(() => {
+            queryModal.classList.add('hidden');
+            modalError.classList.add('hidden'); // Hide error on close
+        }, 300);
+    }
+
+    // --- Query Execution & Card Creation ---
+    async function handleQuerySubmit() {
+        const table = tableSelect.value;
+        const aggFunc = summarizeFunc.value;
+        const aggColumn = summarizeColumn.value;
+        const groupBy = groupByColumn.value;
+
+        if (!table || table.includes('Select') ||
+            !groupBy || groupBy.includes('Select') ||
+            (aggFunc !== 'COUNT' && (!aggColumn || aggColumn.includes('Select'))))
+        {
+            modalError.textContent = 'Please fill out all fields correctly.';
+            modalError.classList.remove('hidden');
+            setTimeout(() => modalError.classList.add('hidden'), 3000);
+            return;
+        }
+
+        const queryConfig = {
+            id: crypto.randomUUID(),
+            table: table,
+            aggFunc: aggFunc,
+            aggColumn: aggFunc === 'COUNT' ? '*' : aggColumn,
+            groupBy: groupBy,
+            groupByDateUnit: groupByDate.value,
+            chartType: 'bar',
+            custom: {
+                title: `${aggFunc} of ${aggColumn || 'Rows'} by ${groupBy}`,
+                color: '#3b82f6'
+            },
+            size: { width: 'auto', height: '400px' }
+        };
+
+        dashboardCards.push(queryConfig);
+        renderDashboard();
+        closeQueryModal();
+    }
+
+    function buildQuery(config, filters = {}) {
+        let selectClause = '';
+        let groupByClause = `GROUP BY T1."${config.groupBy}"`;
+        let whereClauses = [];
+
+        const tableSchema = dbSchema[config.table];
+        if (!tableSchema) return ''; // Should not happen
+        const groupByColumnSchema = tableSchema.columns.find(c => c.name === config.groupBy);
+        const groupByColType = groupByColumnSchema ? groupByColumnSchema.type : '';
+        const isDateType = ['DATE', 'DATETIME', 'TIMESTAMP'].includes(groupByColType);
+
+        if (isDateType && config.groupByDateUnit && config.groupByDateUnit !== 'auto') {
+             let format;
+             switch(config.groupByDateUnit) {
+                 case 'year': format = '%Y'; break;
+                 case 'month': format = '%Y-%m'; break;
+                 case 'week': format = '%Y-%W'; break;
+                 case 'day': format = '%Y-%m-%d'; break;
+             }
+             if (format) {
+                 selectClause = `strftime('${format}', T1."${config.groupBy}") as "${config.groupBy}", ${config.aggFunc}(T1."${config.aggColumn}") as value`;
+                 groupByClause = `GROUP BY 1`; // Group by the first column
+             }
+        }
+        
+        if (!selectClause) {
+            selectClause = `T1."${config.groupBy}", ${config.aggFunc}(T1."${config.aggColumn}") as value`;
+        }
+
+        // Apply global filters
+        for(const [key, value] of Object.entries(filters)) {
+            if(value && value !== 'all') {
+                whereClauses.push(`T1."${key}" = '${value.replace(/'/g, "''")}'`);
+            }
+        }
+
+        let whereClause = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
+        const orderByClause = `ORDER BY 2 DESC LIMIT 50`; // Order by the second column (value), limit for performance
+
+        return `SELECT ${selectClause} FROM "${config.table}" AS T1 ${whereClause} ${groupByClause} ${orderByClause};`;
+    }
+
+    function runQuery(sql) {
+        try {
+            const results = db.exec(sql);
+            if (results.length > 0) {
+                return results[0]; // Returns {columns: [...], values: [...]}
+            }
+            return { columns: [], values: [] };
+        } catch(e) {
+            console.error("Query failed:", sql, e);
+            return { error: e.message };
+        }
+    }
+
+    // --- Dashboard Rendering ---
+    function renderDashboard() {
+        dashboardGrid.innerHTML = '';
+        dashboardGrid.appendChild(addQueryCard);
+        dashboardCards.forEach(cardConfig => createCard(cardConfig));
+        updateGlobalFilters();
+    }
+    
+    function createCard(config) {
+        const cardEl = document.createElement('div');
+        cardEl.className = 'bento-item glass-card rounded-2xl p-4 flex flex-col relative';
+        cardEl.id = `card-${config.id}`;
+        cardEl.style.height = config.size.height;
+        // Handle responsive resizing properly
+        if (config.size.width && config.size.width !== 'auto') {
+            cardEl.style.width = config.size.width;
+            if(parseInt(config.size.width, 10) > dashboardGrid.clientWidth * 0.9) {
+                 cardEl.style.gridColumn = '1 / -1';
+            }
+        }
+
+
+        const sql = buildQuery(config, getActiveGlobalFilters());
+        const result = runQuery(sql);
+
+        // Header
+        const header = document.createElement('div');
+        header.className = 'flex justify-between items-start mb-2';
+        const title = document.createElement('h3');
+        title.className = 'font-semibold text-base pr-2';
+        title.textContent = config.custom.title;
+        header.appendChild(title);
+
+        // Controls
+        const controls = document.createElement('div');
+        controls.className = 'flex gap-1';
+        ['bar', 'line', 'pie', 'table'].forEach(type => {
+            const btn = document.createElement('button');
+            btn.innerHTML = getIcon(type);
+            btn.className = `p-1 rounded ${config.chartType === type ? 'bg-blue-600/50' : 'hover:bg-gray-700'}`;
+            btn.onclick = () => {
+                config.chartType = type;
+                renderDashboard();
+            };
+            controls.appendChild(btn);
+        });
+        header.appendChild(controls);
+
+        // Chart/Table container
+        const contentContainer = document.createElement('div');
+        contentContainer.className = 'flex-grow relative';
+
+        if(result.error){
+            contentContainer.innerHTML = `<div class="text-red-400 text-sm p-4">Error: ${result.error}</div>`
+        } else if (config.chartType === 'table') {
+            contentContainer.innerHTML = createTableHTML(result);
+        } else {
+            const canvas = document.createElement('canvas');
+            contentContainer.appendChild(canvas);
+            setTimeout(() => createChart(canvas, config, result.values), 0); // Render chart after element is in DOM
+        }
+        
+        // Resize handle
+        const resizeHandle = document.createElement('div');
+        resizeHandle.className = 'resize-handle';
+        
+        cardEl.append(header, contentContainer, resizeHandle);
+        dashboardGrid.insertBefore(cardEl, addQueryCard);
+
+        makeResizable(cardEl, config);
+    }
+    
+    function createChart(canvas, config, data) {
+        const labels = data.map(row => row[0]);
+        const values = data.map(row => row[1]);
+
+        if (charts[config.id]) {
+            charts[config.id].destroy();
+        }
+
+        charts[config.id] = new Chart(canvas, {
+            type: config.chartType,
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: config.aggFunc,
+                    data: values,
+                    backgroundColor: config.chartType === 'pie' ? generateColors(values.length) : config.custom.color,
+                    borderColor: config.custom.color,
+                    borderWidth: 1,
+                    tension: 0.1
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        display: config.chartType === 'pie',
+                        labels: { color: 'white' }
+                    }
+                },
+                scales: {
+                    x: { display: config.chartType !== 'pie', ticks: { color: 'white', autoSkip: true, maxTicksLimit: 10 } },
+                    y: { display: config.chartType !== 'pie', ticks: { color: 'white' } }
+                }
+            }
+        });
+    }
+
+    function createTableHTML(result) {
+        const { columns, values } = result;
+        if (!values || values.length === 0) return '<p class="text-gray-500 text-center p-4">No data to display.</p>';
+
+        let tableHTML = '<div class="overflow-auto h-full"><table class="w-full text-sm text-left"><thead><tr class="border-b border-gray-700">';
+        columns.forEach(h => tableHTML += `<th class="p-2">${h}</th>`);
+        tableHTML += '</tr></thead><tbody>';
+        values.forEach(row => {
+            tableHTML += '<tr class="border-b border-gray-800">';
+            row.forEach(cell => tableHTML += `<td class="p-2">${cell === null ? 'NULL' : cell}</td>`);
+            tableHTML += '</tr>';
+        });
+        tableHTML += '</tbody></table></div>';
+        return tableHTML;
+    }
+
+    // --- Global Filters ---
+    function updateGlobalFilters() {
+        const activeColumns = new Map();
+        dashboardCards.forEach(card => {
+            dbSchema[card.table].columns.forEach(col => {
+                if(!activeColumns.has(col.name)) {
+                     activeColumns.set(col.name, card.table);
+                }
+            });
+        });
+
+        if (activeColumns.size === 0) {
+            globalFiltersContainer.innerHTML = `<span class="text-sm text-gray-500">Global filters will appear here once you add cards.</span>`;
+            return;
+        }
+
+        globalFiltersContainer.innerHTML = '';
+        activeColumns.forEach((tableName, colName) => {
+            const filterId = `global-filter-${colName.replace(/\s/g, '_')}`;
+            if (document.getElementById(filterId)) return;
+            
+            const wrapper = document.createElement('div');
+            wrapper.className = 'flex items-center gap-2';
+
+            const label = document.createElement('label');
+            label.textContent = colName;
+            label.className = 'text-sm';
+            
+            const select = document.createElement('select');
+            select.id = filterId;
+            select.dataset.column = colName;
+            select.className = 'bg-gray-900/50 border border-gray-600 rounded-md p-1 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none';
+            select.onchange = () => renderDashboard();
+
+            // Populate options
+            const distinctValuesQuery = `SELECT DISTINCT "${colName}" FROM "${tableName}" WHERE "${colName}" IS NOT NULL ORDER BY "${colName}" ASC LIMIT 100;`;
+            const results = runQuery(distinctValuesQuery);
+            select.innerHTML = '<option value="all">All</option>';
+            if (results && Array.isArray(results.values)) {
+                results.values.forEach(row => {
+                    const option = document.createElement('option');
+                    option.value = row[0];
+                    option.textContent = row[0];
+                    select.appendChild(option);
+                });
+            }
+
+            wrapper.append(label, select);
+            globalFiltersContainer.appendChild(wrapper);
+        });
+    }
+
+    function getActiveGlobalFilters() {
+        const filters = {};
+        const selects = globalFiltersContainer.querySelectorAll('select');
+        selects.forEach(select => {
+            if(select.value !== 'all') {
+                filters[select.dataset.column] = select.value;
+            }
+        });
+        return filters;
+    }
+
+
+    // --- Interactivity ---
+    function makeResizable(element, config) {
+        const handle = element.querySelector('.resize-handle');
+        let isResizing = false;
+
+        handle.addEventListener('mousedown', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            isResizing = true;
+            
+            const startWidth = element.offsetWidth;
+            const startHeight = element.offsetHeight;
+            const startX = e.clientX;
+            const startY = e.clientY;
+
+            function doResize(e) {
+                if (!isResizing) return;
+                const newWidth = startWidth + (e.clientX - startX);
+                const newHeight = startHeight + (e.clientY - startY);
+                element.style.width = `${newWidth}px`;
+                element.style.height = `${newHeight}px`;
+            }
+
+            function stopResize() {
+                if (!isResizing) return;
+                isResizing = false;
+                window.removeEventListener('mousemove', doResize);
+                window.removeEventListener('mouseup', stopResize);
+                
+                config.size.width = element.style.width;
+                config.size.height = element.style.height;
+
+                if (charts[config.id]) {
+                    charts[config.id].resize();
+                }
+                renderDashboard();
+            }
+
+            window.addEventListener('mousemove', doResize);
+            window.addEventListener('mouseup', stopResize);
+        });
+    }
+
+    async function handleExport() {
+        const { jsPDF } = window.jspdf;
+        const grid = document.getElementById('dashboardGrid');
+        const originalBg = document.body.style.backgroundColor;
+        document.body.style.backgroundColor = 'var(--bg-color)'; // Ensure BG is set for canvas
+
+        try {
+            const canvas = await html2canvas(grid, {
+                backgroundColor: getComputedStyle(document.body).getPropertyValue('--bg-color'),
+                scale: 2 // Higher resolution
+            });
+
+            document.body.style.backgroundColor = originalBg;
+
+            const imgData = canvas.toDataURL('image/png');
+            const pdf = new jsPDF({
+                orientation: 'landscape',
+                unit: 'px',
+                format: [canvas.width, canvas.height]
+            });
+            pdf.addImage(imgData, 'PNG', 0, 0, canvas.width, canvas.height);
+            pdf.save('dashboard.pdf');
+        } catch(e) {
+            console.error('Export failed', e);
+            // Removed alert per instructions
+            showError("Could not export to PDF. Check console for details.");
+        }
+    }
+
+
+    // --- Utils ---
+    function getIcon(type) {
+        const icons = {
+            bar: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/></svg>',
+            line: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 16 12 14 20 10 4 8 12 2 12"/></svg>',
+            pie: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/></svg>',
+            table: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3h18v18H3zM21 9H3M21 15H3M12 3v18"/></svg>'
+        };
+        return icons[type];
+    }
+
+    function generateColors(numColors) {
+        const colors = [];
+        for (let i = 0; i < numColors; i++) {
+            const hue = (i * (360 / numColors)) % 360;
+            colors.push(`hsla(${hue}, 70%, 60%, 0.8)`);
+        }
+        return colors;
+    }
+
+</script>
+</body>
+</html>
+

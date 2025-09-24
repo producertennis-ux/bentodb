@@ -135,6 +135,31 @@
             background-color: rgba(59, 130, 246, 0.5);
             border-color: var(--accent-color);
         }
+        
+        .toast-message {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: rgba(255, 255, 255, 0.1);
+            color: var(--text-color);
+            padding: 12px 24px;
+            border-radius: 9999px;
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.3s ease, visibility 0s linear 0.3s;
+            z-index: 100;
+        }
+
+        .toast-message.show {
+            opacity: 1;
+            visibility: visible;
+            transition: opacity 0.3s ease;
+        }
+
     </style>
 </head>
 <body class="min-h-screen">
@@ -145,6 +170,12 @@
             <div class="glass-card p-8 rounded-2xl shadow-2xl">
                 <h1 class="text-3xl font-bold mb-2">BentoDB</h1>
                 <p class="text-md text-gray-400 mb-6">Create beautiful, interactive dashboards from your data files.</p>
+                
+                <!-- Load Session Button -->
+                <button id="loadSessionButton" class="w-full bg-gray-600 hover:bg-gray-700 text-white font-semibold py-2 px-5 rounded-lg transition-colors hidden mb-4">
+                    Load Previous Session
+                </button>
+                
                 <div id="dropZone" class="border-2 border-dashed border-gray-600 rounded-xl p-8 cursor-pointer hover:border-blue-500 hover:bg-gray-800/20 transition-all">
                     <!-- Updated accept attribute to include spreadsheet files -->
                     <input type="file" id="dbFile" accept=".sqlite,.db,.sqlite3,.csv,.xls,.xlsx" class="hidden">
@@ -201,9 +232,13 @@
                     <span id="initialFilterMsg" class="text-sm text-gray-500">Global filters will appear here once you add cards.</span>
                 </div>
                 <div class="flex items-center gap-2">
+                    <button id="saveSessionButton" class="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2 px-4 rounded-lg transition-colors flex items-center gap-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
+                        Save
+                    </button>
                     <button id="updateDashboardButton" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-lg transition-colors flex items-center gap-2">
-                         <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 1-9 9 9 9 0 0 1-9-9c0-1.03.17-2.02.48-2.93"/><path d="M12 21V12h9"/><path d="M18.8 8.8c.47-.84.7-1.78.7-2.82A9 9 0 0 0 12 3"/></svg>
-                         Update Dashboard
+                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 1-9 9 9 9 0 0 1-9-9c0-1.03.17-2.02.48-2.93"/><path d="M12 21V12h9"/><path d="M18.8 8.8c.47-.84.7-1.78.7-2.82A9 9 0 0 0 12 3"/></svg>
+                        Update Dashboard
                     </button>
                     <button id="exportPdf" class="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2 px-4 rounded-lg transition-colors flex items-center gap-2">
                         <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
@@ -360,7 +395,9 @@
             </div>
         </div>
     </div>
-
+    
+    <!-- Toast Message Container -->
+    <div id="toastMessage" class="toast-message"></div>
 
 <script>
     // --- Polyfill for crypto.randomUUID for non-secure contexts ---
@@ -420,6 +457,9 @@
     const confirmationModal = document.getElementById('confirmationModal');
     const confirmDeleteButton = document.getElementById('confirmDelete');
     const cancelDeleteButton = document.getElementById('cancelDelete');
+    const saveSessionButton = document.getElementById('saveSessionButton');
+    const loadSessionButton = document.getElementById('loadSessionButton');
+    const toastMessage = document.getElementById('toastMessage');
 
 
     // --- App State ---
@@ -446,6 +486,100 @@
     }
 
     let sqlJsPromise = initializeSqlJs();
+
+    // --- Utility Functions for Base64 Conversion ---
+    function uint8ToBase64(uint8) {
+        let binary = '';
+        for (let i = 0; i < uint8.length; i++) {
+            binary += String.fromCharCode(uint8[i]);
+        }
+        return btoa(binary);
+    }
+
+    function base64ToUint8(base64) {
+        const binary = atob(base64);
+        const uint8 = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) {
+            uint8[i] = binary.charCodeAt(i);
+        }
+        return uint8;
+    }
+
+    // --- Persistence Functions ---
+    function showToast(message) {
+        toastMessage.textContent = message;
+        toastMessage.classList.add('show');
+        setTimeout(() => {
+            toastMessage.classList.remove('show');
+        }, 3000);
+    }
+
+    function saveSession() {
+        try {
+            if (!db) {
+                showToast("No database to save!");
+                return;
+            }
+            // Export the database
+            const binaryArray = db.export();
+            const dbBase64 = uint8ToBase64(binaryArray);
+
+            // Save the dashboard cards and db to localStorage
+            localStorage.setItem('bentoDbState', JSON.stringify(dashboardCards));
+            localStorage.setItem('bentoDbDb', dbBase64);
+            localStorage.setItem('bentoDbSchema', JSON.stringify(dbSchema));
+            
+            showToast("Session saved successfully!");
+        } catch (e) {
+            console.error("Save failed:", e);
+            showToast(`Save failed: ${e.message}. The database might be too large.`);
+        }
+    }
+    
+    async function loadSession() {
+        try {
+            const savedDbBase64 = localStorage.getItem('bentoDbDb');
+            const savedState = localStorage.getItem('bentoDbState');
+            const savedSchema = localStorage.getItem('bentoDbSchema');
+
+            if (!savedDbBase64 || !savedState) {
+                showToast("No saved session found.");
+                return;
+            }
+
+            loadingText.textContent = "Loading saved session...";
+            loadingIndicator.classList.remove('hidden');
+            uploaderView.classList.add('hidden', 'opacity-0');
+
+            const SQL = await sqlJsPromise;
+            const dbBinary = base64ToUint8(savedDbBase64);
+            db = new SQL.Database(dbBinary);
+
+            dashboardCards = JSON.parse(savedState);
+            dbSchema = JSON.parse(savedSchema);
+            
+            // Re-render the dashboard with the loaded data
+            renderDashboard();
+
+            dashboardView.classList.remove('hidden');
+            setTimeout(() => dashboardView.classList.remove('opacity-0'), 50);
+            loadingIndicator.classList.add('hidden');
+            showToast("Session loaded successfully!");
+
+        } catch (e) {
+            console.error("Load failed:", e);
+            showToast(`Failed to load session: ${e.message}`);
+            uploaderView.classList.remove('hidden', 'opacity-0');
+        }
+    }
+
+    // --- Initial Load Check ---
+    window.onload = function() {
+        if (localStorage.getItem('bentoDbState') && localStorage.getItem('bentoDbDb')) {
+            loadSessionButton.classList.remove('hidden');
+        }
+    }
+
 
     // --- Event Listeners ---
     dropZone.addEventListener('click', () => dbFileInput.click());
@@ -475,6 +609,10 @@
         setTimeout(() => uploaderView.classList.remove('hidden', 'opacity-0'), 300);
     });
     startDashboardButton.addEventListener('click', handleMappingConfirm);
+
+    // New event listeners for save/load
+    saveSessionButton.addEventListener('click', saveSession);
+    loadSessionButton.addEventListener('click', loadSession);
 
     // Filter popover listeners
     closeFilterPopover.addEventListener('click', closeFilterPopoverFunc);
@@ -520,6 +658,7 @@
         loadingIndicator.classList.remove('hidden');
         dropZone.classList.add('hidden');
         errorMessage.classList.add('hidden');
+        loadSessionButton.classList.add('hidden');
         
         const fileExtension = file.name.split('.').pop().toLowerCase();
         currentFileName = file.name;
@@ -558,6 +697,9 @@
             showError(`Could not read the file: ${err.message}.`);
             loadingIndicator.classList.add('hidden');
             dropZone.classList.remove('hidden');
+            if (localStorage.getItem('bentoDbState') && localStorage.getItem('bentoDbDb')) {
+                loadSessionButton.classList.remove('hidden');
+            }
         }
     }
     
